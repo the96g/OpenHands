@@ -622,8 +622,8 @@ def convert_fncall_messages_to_non_fncall_messages(
 def _extract_and_validate_params(
     matching_tool: dict, param_matches: Iterable[re.Match], fn_name: str
 ) -> dict:
-    params = {}
     # Parse and validate parameters
+    params: dict = {}
     required_params = set()
     if 'parameters' in matching_tool and 'required' in matching_tool['parameters']:
         required_params = set(matching_tool['parameters'].get('required', []))
@@ -692,6 +692,21 @@ def _extract_and_validate_params(
         raise FunctionCallValidationError(
             f"Missing required parameters for function '{fn_name}': {missing_params}"
         )
+
+
+    # ------------------------------------------------------------------
+    # Backwards-compatibility hack for execute_bash
+    #
+    # Older tool schemas did not declare the `security_risk` parameter,
+    # but newer versions of OpenHands treat it as required. When a model
+    # using the old schema calls `execute_bash` without this argument,
+    # the backend raises:
+    #   "Missing required parameters for function 'execute_bash': {'security_risk'}"
+    #
+    # To keep things working with self-hosted LLMs (e.g. Qwen-coder),
+    # we default the flag to False whenever it is omitted.
+    if fn_name == EXECUTE_BASH_TOOL_NAME and "security_risk" not in params:
+        params["security_risk"] = False
     return params
 
 
