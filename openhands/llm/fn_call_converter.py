@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from typing import Iterable
+from openhands.llm.dgx_flags import is_dgx_trusted_runtime
 
 from litellm import ChatCompletionToolParam
 
@@ -691,14 +692,29 @@ def _extract_and_validate_params(
         found_params.add(param_name)
 
     # ------------------------------------------------------------------
-    # DGX: backwards-compatibility for execute_bash
+    # DGX: backwards-compatibility for `security_risk`
     #
-    # Some models (like self-hosted Qwen) do not send `security_risk`
-    # even though newer schemas mark it as required. We inject a safe
-    # default before validating required params.
-    if fn_name == EXECUTE_BASH_TOOL_NAME and "security_risk" not in found_params:
-        params["security_risk"] = "LOW"
-        found_params.add("security_risk")
+    # Newer schemas require security_risk ∈ {"LOW","MEDIUM","HIGH"} (or
+    # some enum) on several tools (execute_bash, str_replace_editor, etc).
+    # Older/self-hosted models (like Qwen) don't send this param.
+    #
+    # When running in DGX trusted runtime mode, we silently default it to
+    # the lowest-risk enum value so tools don't fail.
+    if is_dgx_trusted_runtime():
+        if "security_risk" in required_params and "security_risk" not in found_params:
+            default_value = "LOW"
+
+            props = matching_tool.get("parameters", {}).get("properties", {})
+            enum_vals = props.get("security_risk", {}).get("enum")
+
+            if isinstance(enum_vals, list) and enum_vals:
+                if "LOW" in enum_vals:
+                    default_value = "LOW"
+                else:
+                    default_value = enum_vals[0]
+
+            params["security_risk"] = default_value
+            found_params.add("security_risk")
     # ------------------------------------------------------------------
 
     # Now validate that all required parameters are present
