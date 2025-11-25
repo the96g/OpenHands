@@ -686,28 +686,24 @@ def _extract_and_validate_params(
         params[param_name] = param_value
         found_params.add(param_name)
 
-    # Check all required parameters are present
-    missing_params = required_params - found_params
-    if missing_params:
-        raise FunctionCallValidationError(
-            f"Missing required parameters for function '{fn_name}': {missing_params}"
-        )
-
-
-    # ------------------------------------------------------------------
-    # Backwards-compatibility hack for execute_bash
-    #
-    # Older tool schemas did not declare the `security_risk` parameter,
-    # but newer versions of OpenHands treat it as required. When a model
-    # using the old schema calls `execute_bash` without this argument,
-    # the backend raises:
-    #   "Missing required parameters for function 'execute_bash': {'security_risk'}"
-    #
-    # To keep things working with self-hosted LLMs (e.g. Qwen-coder),
-    # we default the flag to False whenever it is omitted.
-    if fn_name == EXECUTE_BASH_TOOL_NAME and "security_risk" not in params:
+# ------------------------------------------------------------------
+# Backwards-compatibility hack for execute_bash
+# Insert BEFORE validating missing parameters.
+if fn_name == EXECUTE_BASH_TOOL_NAME:
+    if "security_risk" not in found_params:
         params["security_risk"] = False
-    return params
+        found_params.add("security_risk")
+# ------------------------------------------------------------------
+
+# Now validate required parameters
+missing_params = required_params - found_params
+if missing_params:
+    raise FunctionCallValidationError(
+        f"Missing required parameters for function '{fn_name}': {missing_params}"
+    )
+
+return params
+
 
 
 def _fix_stopword(content: str) -> str:
