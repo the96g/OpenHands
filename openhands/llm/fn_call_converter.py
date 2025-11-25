@@ -684,9 +684,35 @@ def _extract_and_validate_params(
         ):
             enum_vals = matching_tool["parameters"]["properties"][param_name]["enum"]
             if param_value not in enum_vals:
-                raise FunctionCallValidationError(
-                    f"Parameter '{param_name}' is expected to be one of {enum_vals}."
-                )
+                # DGX: be more forgiving for `command` enums on editor tools.
+                # Some models emit values like "edit" or "replace" which are not
+                # in the enum, even though the intent is clearly "str_replace".
+                if is_dgx_trusted_runtime() and param_name == "command":
+                    lowered = str(param_value).lower()
+                    synonym_map = {
+                        "edit": "str_replace",
+                        "replace": "str_replace",
+                        "update": "str_replace",
+                        "modify": "str_replace",
+                        "create_file": "create",
+                        "view_file": "view",
+                        "insert_text": "insert",
+                    }
+
+                    # Try explicit synonym mapping first
+                    if lowered in synonym_map and synonym_map[lowered] in enum_vals:
+                        param_value = synonym_map[lowered]
+                    else:
+                        # Fallback: choose a safe default
+                        if "str_replace" in enum_vals:
+                            param_value = "str_replace"
+                        else:
+                            # last resort: first enum value
+                            param_value = enum_vals[0]
+                else:
+                    raise FunctionCallValidationError(
+                        f"Parameter '{param_name}' is expected to be one of {enum_vals}."
+                    )
 
         params[param_name] = param_value
         found_params.add(param_name)
