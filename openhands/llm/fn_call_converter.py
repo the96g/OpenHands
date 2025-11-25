@@ -697,7 +697,7 @@ def _extract_and_validate_params(
     # even though newer schemas mark it as required. We inject a safe
     # default before validating required params.
     if fn_name == EXECUTE_BASH_TOOL_NAME and "security_risk" not in found_params:
-        params["security_risk"] = False
+        params["security_risk"] = "LOW"
         found_params.add("security_risk")
     # ------------------------------------------------------------------
 
