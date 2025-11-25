@@ -742,6 +742,15 @@ def _extract_and_validate_params(
             params["security_risk"] = default_value
             found_params.add("security_risk")
     # ------------------------------------------------------------------
+    # DGX: auto-inject empty message for `finish` tool
+    if (
+        is_dgx_trusted_runtime()
+        and fn_name == "finish"
+        and "message" in required_params
+        and "message" not in found_params
+    ):
+        params["message"] = ""
+        found_params.add("message")
 
     # Now validate that all required parameters are present
     missing_params = required_params - found_params
