@@ -624,23 +624,24 @@ def _extract_and_validate_params(
 ) -> dict:
     # Parse and validate parameters
     params: dict = {}
-    required_params = set()
-    if 'parameters' in matching_tool and 'required' in matching_tool['parameters']:
-        required_params = set(matching_tool['parameters'].get('required', []))
+    required_params: set[str] = set()
 
-    allowed_params = set()
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
-        allowed_params = set(matching_tool['parameters']['properties'].keys())
+    if "parameters" in matching_tool and "required" in matching_tool["parameters"]:
+        required_params = set(matching_tool["parameters"].get("required", []))
 
-    param_name_to_type = {}
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
+    allowed_params: set[str] = set()
+    if "parameters" in matching_tool and "properties" in matching_tool["parameters"]:
+        allowed_params = set(matching_tool["parameters"]["properties"].keys())
+
+    param_name_to_type: dict[str, str] = {}
+    if "parameters" in matching_tool and "properties" in matching_tool["parameters"]:
         param_name_to_type = {
-            name: val.get('type', 'string')
-            for name, val in matching_tool['parameters']['properties'].items()
+            name: val.get("type", "string")
+            for name, val in matching_tool["parameters"]["properties"].items()
         }
 
     # Collect parameters
-    found_params = set()
+    found_params: set[str] = set()
     for param_match in param_matches:
         param_name = param_match.group(1)
         param_value = param_match.group(2)
@@ -649,20 +650,20 @@ def _extract_and_validate_params(
         if allowed_params and param_name not in allowed_params:
             raise FunctionCallValidationError(
                 f"Parameter '{param_name}' is not allowed for function '{fn_name}'. "
-                f'Allowed parameters: {allowed_params}'
+                f"Allowed parameters: {allowed_params}"
             )
 
         # Validate and convert parameter type
-        # supported: string, integer, array
         if param_name in param_name_to_type:
-            if param_name_to_type[param_name] == 'integer':
+            expected_type = param_name_to_type[param_name]
+            if expected_type == "integer":
                 try:
                     param_value = int(param_value)
                 except ValueError:
                     raise FunctionCallValidationError(
                         f"Parameter '{param_name}' is expected to be an integer."
                     )
-            elif param_name_to_type[param_name] == 'array':
+            elif expected_type == "array":
                 try:
                     param_value = json.loads(param_value)
                 except json.JSONDecodeError:
@@ -670,39 +671,45 @@ def _extract_and_validate_params(
                         f"Parameter '{param_name}' is expected to be an array."
                     )
             else:
-                # string
+                # treat as string
                 pass
 
-        # Enum check
-        if 'enum' in matching_tool['parameters']['properties'][param_name]:
-            if (
-                param_value
-                not in matching_tool['parameters']['properties'][param_name]['enum']
-            ):
+        # Enum check (only if properties/param exist)
+        if (
+            "parameters" in matching_tool
+            and "properties" in matching_tool["parameters"]
+            and param_name in matching_tool["parameters"]["properties"]
+            and "enum" in matching_tool["parameters"]["properties"][param_name]
+        ):
+            enum_vals = matching_tool["parameters"]["properties"][param_name]["enum"]
+            if param_value not in enum_vals:
                 raise FunctionCallValidationError(
-                    f"Parameter '{param_name}' is expected to be one of {matching_tool['parameters']['properties'][param_name]['enum']}."
+                    f"Parameter '{param_name}' is expected to be one of {enum_vals}."
                 )
 
         params[param_name] = param_value
         found_params.add(param_name)
 
-# ------------------------------------------------------------------
-# Backwards-compatibility hack for execute_bash
-# Insert BEFORE validating missing parameters.
-if fn_name == EXECUTE_BASH_TOOL_NAME:
-    if "security_risk" not in found_params:
+    # ------------------------------------------------------------------
+    # DGX: backwards-compatibility for execute_bash
+    #
+    # Some models (like self-hosted Qwen) do not send `security_risk`
+    # even though newer schemas mark it as required. We inject a safe
+    # default before validating required params.
+    if fn_name == EXECUTE_BASH_TOOL_NAME and "security_risk" not in found_params:
         params["security_risk"] = False
         found_params.add("security_risk")
-# ------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
-# Now validate required parameters
-missing_params = required_params - found_params
-if missing_params:
-    raise FunctionCallValidationError(
-        f"Missing required parameters for function '{fn_name}': {missing_params}"
-    )
+    # Now validate that all required parameters are present
+    missing_params = required_params - found_params
+    if missing_params:
+        raise FunctionCallValidationError(
+            f"Missing required parameters for function '{fn_name}': {missing_params}"
+        )
 
-return params
+    return params
+
 
 
 
